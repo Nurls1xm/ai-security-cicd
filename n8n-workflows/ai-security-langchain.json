@@ -1,0 +1,173 @@
+{
+  "name": "AI Security Analysis - LangChain Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "security-analysis",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "webhookId": "security-analysis"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get raw input from webhook\nconst raw = $input.first().json;\n\n// Webhook may store data in body\nconst input = raw.body ? raw.body : raw;\n\n// Debug logging\nconsole.log('RAW INPUT:', JSON.stringify(raw, null, 2));\nconsole.log('PARSED INPUT:', JSON.stringify(input, null, 2));\n\n// Ensure vulnerabilities is array\nlet vulnerabilities = [];\nif (Array.isArray(input.vulnerabilities)) {\n  vulnerabilities = input.vulnerabilities;\n} else if (input.vulnerabilities) {\n  vulnerabilities = [input.vulnerabilities];\n}\n\n// Ensure codeSnippets is array\nlet codeSnippets = [];\nif (Array.isArray(input.codeSnippets)) {\n  codeSnippets = input.codeSnippets;\n} else if (input.codeSnippets) {\n  codeSnippets = [input.codeSnippets];\n}\n\n// Debug values\nconsole.log('VULNERABILITIES:', vulnerabilities);\nconsole.log('REPOSITORY:', input.repository);\n\nreturn [{\n  json: {\n    repository: input.repository || 'unknown',\n    branch: input.branch || 'main',\n    commit: input.commit || input.commitHash || 'unknown',\n    scanResults: input.scanResults || 'Security scan completed',\n    vulnerabilities: vulnerabilities,\n    codeSnippets: codeSnippets,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "extract-1",
+      "name": "Extract Security Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build detailed security analysis prompt\nconst data = $input.all()[0].json;\n\n// Count vulnerabilities by severity\nconst severityCounts = {\n  CRITICAL: 0,\n  HIGH: 0,\n  MEDIUM: 0,\n  LOW: 0\n};\n\ndata.vulnerabilities.forEach(vuln => {\n  const severity = (vuln.severity || 'UNKNOWN').toUpperCase();\n  if (severityCounts[severity] !== undefined) {\n    severityCounts[severity]++;\n  }\n});\n\n// Build prompt in Kazakh\nconst prompt = `Сіз қауіпсіздік талдауын жүргізетін киберқауіпсіздік сарапшысысыз.\n\n=== ҚАУІПСІЗДІК СКАНЕРІ ЕСЕБІ ===\n\nРепозиторий: ${data.repository}\nТармақ: ${data.branch}\nКоммит: ${data.commit}\n\nСканер қорытындысы: ${data.scanResults}\n\n=== ТАБЫЛҒАН ОСАЛДЫҚТАР ===\nБарлығы: ${data.vulnerabilities.length}\n- CRITICAL (Өте қауіпті): ${severityCounts.CRITICAL}\n- HIGH (Жоғары): ${severityCounts.HIGH}\n- MEDIUM (Орташа): ${severityCounts.MEDIUM}\n- LOW (Төмен): ${severityCounts.LOW}\n\nТолық ақпарат:\n${JSON.stringify(data.vulnerabilities, null, 2)}\n\n=== ҚАУІПТІ КОД ҮЛГІЛЕРІ ===\n${data.codeSnippets.length > 0 ? JSON.stringify(data.codeSnippets, null, 2) : 'Табылмады'}\n\n=== СІЗДІҢ ТАПСЫРМАҢЫЗ ===\n\nБұл қауіпсіздік есебін талдап, орналастыру туралы шешім қабылдаңыз.\n\nЕРЕЖЕЛЕР:\n1. Егер CRITICAL немесе HIGH деңгейдегі осалдықтар болса → deployDecision \"NO\" болуы КЕРЕК\n2. Егер қауіпті код үлгілері табылса (eval, exec, innerHTML) → deployDecision \"NO\" болуы КЕРЕК\n3. Тек қауіпсіздік қатерлері болмаса ғана орналастыруға рұқсат беріңіз\n4. Қауіпсіздікті басымдыққа алыңыз\n\nТЕК ҚАНА JSON форматында жауап беріңіз (markdown жоқ, түсініктеме жоқ):\n\n{\n  \"deployDecision\": \"YES\" немесе \"NO\",\n  \"riskLevel\": \"CRITICAL\" немесе \"HIGH\" немесе \"MEDIUM\" немесе \"LOW\",\n  \"confidence\": 0.95,\n  \"criticalIssues\": [\"нақты мәселе 1\", \"нақты мәселе 2\"],\n  \"recommendations\": [\"нақты ұсыныс 1\", \"нақты ұсыныс 2\"],\n  \"summary\": \"Қауіпсіздік бағалауының қысқаша қорытындысы\"\n}\n\nМАҢЫЗДЫ: Барлық мәтінді ҚАЗАҚ ТІЛІНДЕ жазыңыз!`;\n\nreturn [{\n  json: {\n    chatInput: prompt,\n    originalData: data,\n    severityCounts: severityCounts\n  }\n}];"
+      },
+      "id": "build-prompt-1",
+      "name": "Build AI Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "text": "={{ $json.chatInput }}",
+        "options": {}
+      },
+      "id": "ai-agent-1",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.6,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "model": "gemini-2.0-flash-lite",
+        "options": {}
+      },
+      "id": "gemini-model-1",
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [840, 480],
+      "credentials": {
+        "googleGeminiOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse AI response and build final decision\nconst originalData = $('Build AI Prompt').item.json.originalData;\nconst severityCounts = $('Build AI Prompt').item.json.severityCounts;\nconst startTime = originalData.timestamp;\nconst endTime = new Date().toISOString();\nconst processingTime = new Date(endTime) - new Date(startTime);\n\nconst aiResponse = $input.all()[0].json;\n\nlet analysis;\n\ntry {\n  // Get AI response\n  const responseText = aiResponse.output || aiResponse.text || aiResponse.response || JSON.stringify(aiResponse);\n  \n  // Extract JSON\n  const jsonMatch = responseText.match(/\\{[\\s\\S]*\\}/);\n  \n  if (jsonMatch) {\n    analysis = JSON.parse(jsonMatch[0]);\n  } else {\n    // Fallback\n    const textLower = responseText.toLowerCase();\n    const hasNo = textLower.includes('no') || textLower.includes('жоқ') || textLower.includes('бұғатталды');\n    \n    analysis = {\n      deployDecision: hasNo ? 'NO' : 'YES',\n      riskLevel: hasNo ? 'HIGH' : 'MEDIUM',\n      confidence: 0.6,\n      criticalIssues: ['AI жауабын талдау мүмкін болмады'],\n      recommendations: ['Қолмен тексеру ұсынылады'],\n      summary: responseText.substring(0, 200)\n    };\n  }\n} catch (error) {\n  analysis = {\n    deployDecision: 'NO',\n    riskLevel: 'CRITICAL',\n    confidence: 0.0,\n    criticalIssues: ['AI талдауы сәтсіз аяқталды: ' + error.message],\n    recommendations: ['Қолмен қауіпсіздік тексеруі қажет'],\n    summary: 'Қауіпсіздік талдауында қате орын алды'\n  };\n}\n\n// Validate fields\nanalysis.deployDecision = analysis.deployDecision || 'NO';\nanalysis.riskLevel = analysis.riskLevel || 'БЕЛГІСІЗ';\nanalysis.confidence = typeof analysis.confidence === 'number' ? analysis.confidence : 0.5;\nanalysis.criticalIssues = Array.isArray(analysis.criticalIssues) ? analysis.criticalIssues : [];\nanalysis.recommendations = Array.isArray(analysis.recommendations) ? analysis.recommendations : [];\nanalysis.summary = analysis.summary || 'Талдау аяқталды';\n\nreturn [{\n  json: {\n    success: true,\n    deployDecision: analysis.deployDecision,\n    riskLevel: analysis.riskLevel,\n    confidence: analysis.confidence,\n    criticalIssues: analysis.criticalIssues,\n    recommendations: analysis.recommendations,\n    summary: analysis.summary,\n    processingTimeMs: processingTime,\n    timestamp: endTime,\n    aiProvider: 'Google Gemini LangChain Agent',\n    scanStatistics: {\n      totalVulnerabilities: originalData.vulnerabilities.length,\n      criticalCount: severityCounts.CRITICAL,\n      highCount: severityCounts.HIGH,\n      mediumCount: severityCounts.MEDIUM,\n      lowCount: severityCounts.LOW,\n      dangerousPatterns: originalData.codeSnippets.length\n    },\n    metadata: {\n      repository: originalData.repository,\n      branch: originalData.branch,\n      commit: originalData.commit\n    }\n  }\n}];"
+      },
+      "id": "parse-1",
+      "name": "Parse AI Decision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1040, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json, null, 2) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-1",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1240, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Security Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Security Data": {
+      "main": [
+        [
+          {
+            "node": "Build AI Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build AI Prompt": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Google Gemini Chat Model",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ],
+      "main": [
+        [
+          {
+            "node": "Parse AI Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Decision": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-04-10T00:00:00.000Z",
+  "versionId": "1"
+}

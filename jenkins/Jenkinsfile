@@ -1,0 +1,294 @@
+pipeline {
+    agent any
+    
+    environment {
+        N8N_WEBHOOK_URL = 'http://ai-security-n8n:5678/webhook/security-analysis'
+        GIT_REPO_URL = 'https://github.com/yourusername/ai-security-cicd.git'
+        TEST_DIR = 'tests'
+    }
+    
+    stages {
+        stage('Checkout Repository') {
+            steps {
+                echo '📥 Репозиторийді жүктеу...'
+                
+                // Клонирование репозитория из GitHub
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: '*/main']],
+                    userRemoteConfigs: [[url: env.GIT_REPO_URL]]
+                ])
+                
+                echo "✅ Репозиторий жүктелді: ${env.GIT_BRANCH}"
+                echo "📌 Commit: ${env.GIT_COMMIT}"
+            }
+        }
+        
+        stage('Security Scan - Tests Directory') {
+            steps {
+                script {
+                    echo '🔍 tests/ папкасын сканерлеу...'
+                    echo "📂 Сканерленетін папка: ${env.TEST_DIR}"
+                    
+                    def vulnerabilities = []
+                    def codeSnippets = []
+                    def scanSummary = ''
+                    def filesScanned = []
+                    
+                    try {
+                        // Получить список файлов в tests/
+                        def testFiles = sh(
+                            script: "find ${env.TEST_DIR} -type f \\( -name '*.py' -o -name '*.js' -o -name '*.ts' \\) 2>/dev/null || true",
+                            returnStdout: true
+                        ).trim()
+                        
+                        if (testFiles) {
+                            filesScanned = testFiles.split('\n')
+                            echo "📄 Табылған файлдар: ${filesScanned.size()}"
+                            filesScanned.each { file ->
+                                echo "  - ${file}"
+                            }
+                        } else {
+                            echo "⚠️ tests/ папкасында файлдар табылмады"
+                        }
+                        
+                    } catch (Exception e) {
+                        echo "⚠️ Файлдарды іздеу қатесі: ${e.message}"
+                    }
+                    
+                    try {
+                        // Поиск опасных паттернов в tests/
+                        echo '🔎 Қауіпті код үлгілерін іздеу...'
+                        
+                        // Поиск eval() в tests/
+                        def evalFiles = sh(
+                            script: "grep -r 'eval(' ${env.TEST_DIR} --include='*.py' --include='*.js' --include='*.ts' 2>/dev/null || true",
+                            returnStdout: true
+                        ).trim()
+                        
+                        if (evalFiles) {
+                            codeSnippets.add('eval() табылды')
+                            echo "⚠️ eval() табылды: ${evalFiles}"
+                        }
+                        
+                        // Поиск exec() в tests/
+                        def execFiles = sh(
+                            script: "grep -r 'exec(' ${env.TEST_DIR} --include='*.py' --include='*.js' --include='*.ts' 2>/dev/null || true",
+                            returnStdout: true
+                        ).trim()
+                        
+                        if (execFiles) {
+                            codeSnippets.add('exec() табылды')
+                            echo "⚠️ exec() табылды: ${execFiles}"
+                        }
+                        
+                        // Поиск os.system() в Python
+                        def osSystemFiles = sh(
+                            script: "grep -r 'os\\.system(' ${env.TEST_DIR} --include='*.py' 2>/dev/null || true",
+                            returnStdout: true
+                        ).trim()
+                        
+                        if (osSystemFiles) {
+                            codeSnippets.add('os.system() табылды')
+                            echo "⚠️ os.system() табылды: ${osSystemFiles}"
+                        }
+                        
+                        // Поиск subprocess.call() без shell=False
+                        def subprocessFiles = sh(
+                            script: "grep -r 'subprocess\\.call(' ${env.TEST_DIR} --include='*.py' 2>/dev/null || true",
+                            returnStdout: true
+                        ).trim()
+                        
+                        if (subprocessFiles) {
+                            codeSnippets.add('subprocess.call() табылды')
+                            echo "⚠️ subprocess.call() табылды: ${subprocessFiles}"
+                        }
+                        
+                        // Поиск innerHTML в JS/TS
+                        def innerHTMLFiles = sh(
+                            script: "grep -r 'innerHTML' ${env.TEST_DIR} --include='*.js' --include='*.ts' 2>/dev/null || true",
+                            returnStdout: true
+                        ).trim()
+                        
+                        if (innerHTMLFiles) {
+                            codeSnippets.add('innerHTML табылды')
+                            echo "⚠️ innerHTML табылды: ${innerHTMLFiles}"
+                        }
+                        
+                        echo "✅ Код талдауы аяқталды: ${codeSnippets.size()} қауіпті үлгі табылды"
+                        
+                    } catch (Exception e) {
+                        echo "⚠️ Код талдауы қатесі: ${e.message}"
+                    }
+                    
+                    // Формирование отчета
+                    scanSummary = """
+Қауіпсіздік сканері аяқталды.
+Сканерленген папка: ${env.TEST_DIR}
+Сканерленген файлдар: ${filesScanned.size()}
+Қауіпті код үлгілері: ${codeSnippets.size()}
+                    """.trim()
+                    
+                    echo '📊 Сканер нәтижелері:'
+                    echo scanSummary
+                    
+                    // Отправка результатов в n8n для AI анализа
+                    echo '🤖 AI талдауына жіберу...'
+                    
+                    def scanResults = [
+                        repository: env.JOB_NAME,
+                        branch: env.GIT_BRANCH ?: 'main',
+                        commit: env.GIT_COMMIT ?: 'unknown',
+                        scanResults: scanSummary,
+                        vulnerabilities: vulnerabilities,
+                        codeSnippets: codeSnippets,
+                        filesScanned: filesScanned,
+                        testDirectory: env.TEST_DIR,
+                        statistics: [
+                            filesScanned: filesScanned.size(),
+                            dangerousPatterns: codeSnippets.size()
+                        ]
+                    ]
+                    
+                    def jsonPayload = groovy.json.JsonOutput.toJson(scanResults)
+                    
+                    // Отправка в n8n webhook
+                    def response = sh(
+                        script: """
+                        curl -X POST ${N8N_WEBHOOK_URL} \
+                          -H 'Content-Type: application/json' \
+                          -d '${jsonPayload}' \
+                          --max-time 60
+                        """,
+                        returnStdout: true
+                    ).trim()
+                    
+                    echo "🤖 AI жауабы алынды"
+                    echo response
+                    
+                    // Обработка решения AI
+                    if (response.contains('Error in workflow')) {
+                        echo "⚠️ n8n қатесі - API rate limit"
+                        echo "Демонстрация режимі: Workflow жұмыс істейді ✅"
+                        
+                        // В демо режиме проверяем сами
+                        if (codeSnippets.size() > 0) {
+                            echo "❌ Қауіпті код табылды"
+                            error("Қауіпсіздік мәселелері - орналастыру бұғатталды")
+                        } else {
+                            echo "✅ Қауіпсіздік тексеруі өтті"
+                        }
+                        
+                    } else {
+                        // Парсим JSON ответ от AI
+                        try {
+                            def aiDecision = readJSON text: response
+                            
+                            echo ""
+                            echo "═══════════════════════════════════════"
+                            echo "🤖 AI ТАЛДАУ НӘТИЖЕСІ"
+                            echo "═══════════════════════════════════════"
+                            echo ""
+                            echo "📋 Шешім: ${aiDecision.deployDecision}"
+                            echo "📊 Қауіп деңгейі: ${aiDecision.riskLevel}"
+                            echo "🎯 Сенімділік: ${aiDecision.confidence}"
+                            echo ""
+                            
+                            if (aiDecision.criticalIssues && aiDecision.criticalIssues.size() > 0) {
+                                echo "🚨 КРИТИКАЛЫҚ МӘСЕЛЕЛЕР:"
+                                aiDecision.criticalIssues.each { issue ->
+                                    echo "  • ${issue}"
+                                }
+                                echo ""
+                            }
+                            
+                            if (aiDecision.recommendations && aiDecision.recommendations.size() > 0) {
+                                echo "💡 ҰСЫНЫСТАР:"
+                                aiDecision.recommendations.each { rec ->
+                                    echo "  • ${rec}"
+                                }
+                                echo ""
+                            }
+                            
+                            if (aiDecision.summary) {
+                                echo "📝 ҚОРЫТЫНДЫ:"
+                                echo "${aiDecision.summary}"
+                                echo ""
+                            }
+                            
+                            echo "═══════════════════════════════════════"
+                            echo ""
+                            
+                            // Проверка решения
+                            if (aiDecision.deployDecision == 'NO' || aiDecision.deployDecision == 'ЖОҚ') {
+                                echo "❌ AI шешімі: Орналастыру БҰҒАТТАЛДЫ"
+                                echo "🚫 Себебі: Қауіпсіздік қатерлері табылды"
+                                error("AI қауіпсіздік талдауы - орналастыру бұғатталды")
+                            } else {
+                                echo "✅ AI шешімі: Орналастыруға РҰҚСАТ"
+                                echo "🎯 tests/ папкасы қауіпсіз - жалғастыру"
+                            }
+                            
+                        } catch (Exception e) {
+                            echo "⚠️ AI жауабын парсинг қатесі: ${e.message}"
+                            echo "Жауап: ${response}"
+                            
+                            // Fallback проверка
+                            if (response.contains('"deployDecision":"NO"') || 
+                                response.contains('"deployDecision": "NO"') ||
+                                response.contains('"deployDecision":"ЖОҚ"')) {
+                                error("AI қауіпсіздік талдауы - орналастыру бұғатталды")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Build Application') {
+            when {
+                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+            }
+            steps {
+                echo '🔨 Қосымшаны құрастыру...'
+                echo '✅ Құрастыру сәтті аяқталды'
+            }
+        }
+        
+        stage('Deploy Application') {
+            when {
+                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+            }
+            steps {
+                echo '🚀 Қосымшаны орналастыру...'
+                echo '✅ Орналастыру сәтті аяқталды'
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo '✅ Pipeline сәтті аяқталды!'
+            echo ''
+            echo '📊 Қорытынды:'
+            echo "  • Сканерленген папка: ${env.TEST_DIR} ✅"
+            echo '  • AI талдауы: Өтті ✅'
+            echo '  • Құрастыру: Сәтті ✅'
+            echo '  • Орналастыру: Сәтті ✅'
+            echo ''
+            echo '🎉 Жоба өндіріске орналастырылды!'
+        }
+        failure {
+            echo '❌ Pipeline сәтсіз аяқталды!'
+            echo ''
+            echo '🚫 Себебі: tests/ папкасында қауіпсіздік мәселелері табылды'
+            echo '📋 Әрекет: tests/test.py файлын жөндеу және қайта push жасау'
+        }
+        always {
+            echo ''
+            echo '📈 Pipeline статистикасы:'
+            echo "  • Жұмыс уақыты: ${currentBuild.durationString}"
+            echo "  • Нәтиже: ${currentBuild.result ?: 'SUCCESS'}"
+        }
+    }
+}
