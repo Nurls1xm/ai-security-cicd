@@ -1,5 +1,4 @@
 services:
-  # n8n - Workflow Automation
   n8n:
     image: n8nio/n8n:latest
     container_name: ai-security-n8n
@@ -20,7 +19,6 @@ services:
       - ai-security-network
     restart: unless-stopped
 
-  # Jenkins
   jenkins:
     image: jenkins/jenkins:lts
     container_name: ai-security-jenkins
