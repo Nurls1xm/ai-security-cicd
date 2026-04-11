@@ -3,7 +3,7 @@ pipeline {
     
     environment {
         N8N_WEBHOOK_URL = 'http://ai-security-n8n:5678/webhook/security-analysis'
-        GIT_REPO_URL = 'https://github.com/yourusername/ai-security-cicd.git'
+        GIT_REPO_URL = 'https://github.com/Nurls1xm/ai-security-cicd.git'
         TEST_DIR = 'tests'
     }
     
