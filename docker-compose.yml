@@ -86,7 +86,6 @@ volumes:
   n8n_data:
   jenkins_data:
   postgres_data:
-  postgres_data:
 
 networks:
   ai-security-network:
