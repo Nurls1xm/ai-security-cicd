@@ -24,4 +24,4 @@ def process_data(data):
 
 if __name__ == "__main__":
     safe_function()
-    print("Test completed successfully")
+    print("Test completed successfully CI-CD demonstration")
