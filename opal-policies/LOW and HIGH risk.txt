@@ -1,0 +1,3 @@
+curl -X POST http://localhost:8181/v1/data/security/deployment_decision -H "Content-Type: application/json" -d '{"input":{"riskLevel":"LOW","confidence":0.95}}'
+
+curl -X POST http://localhost:8181/v1/data/security/deployment_decision -H "Content-Type: application/json" -d '{"input":{"riskLevel":"HIGH","confidence":0.95}}'
