@@ -23,8 +23,10 @@ services:
     image: jenkins/jenkins:lts
     container_name: ai-security-jenkins
     ports:
-      - "8081:8080"
+      - "8080:8080"
       - "50000:50000"
+    environment:
+      - OPAL_CLIENT_URL=http://opal-client:7000
     volumes:
       - jenkins_data:/var/jenkins_home
       - ./jenkins:/var/jenkins_config
@@ -32,9 +34,58 @@ services:
       - ai-security-network
     restart: unless-stopped
 
+  opal-server:
+    image: permitio/opal-server:latest
+    container_name: ai-security-opal-server
+    ports:
+      - "7002:7002"
+    environment:
+      - OPAL_BROADCAST_URI=postgres://postgres:postgres@postgres:5432/opal
+      - UVICORN_NUM_WORKERS=4
+      - OPAL_POLICY_REPO_URL=https://github.com/Nurls1xm/ai-security-cicd.git
+      - OPAL_POLICY_REPO_MAIN_BRANCH=main
+      - OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://opal-server:7002/policy-data","topics":["policy_data"],"dst_path":"/"}]}}
+    networks:
+      - ai-security-network
+    restart: unless-stopped
+    depends_on:
+      - postgres
+
+  opal-client:
+    image: permitio/opal-client:latest
+    container_name: ai-security-opal-client
+    ports:
+      - "7000:7000"
+      - "8181:8181"
+    environment:
+      - OPAL_SERVER_URL=http://opal-server:7002
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+      - OPAL_INLINE_OPA_LOG_FORMAT=http
+    networks:
+      - ai-security-network
+    restart: unless-stopped
+    depends_on:
+      - opal-server
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: ai-security-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=opal
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - ai-security-network
+    restart: unless-stopped
+
 volumes:
   n8n_data:
   jenkins_data:
+  postgres_data:
 
 networks:
   ai-security-network:
