@@ -40,4 +40,4 @@ if __name__ == "__main__":
     total = calculate_sum(numbers)
     print(f"Sum: {total}")
     
-    print("✅ All tests passed - SAFE CODE")
+    print("✅ All tests passed - SAFE CODE CI/CD DEMO")
