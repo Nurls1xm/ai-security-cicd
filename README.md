@@ -34,6 +34,10 @@ Developer Push → GitHub
                    ↓
          AI Decision: YES/NO
                    ↓
+              OPAL Policy Check
+                   ↓
+         Final Decision: Allow/Block
+                   ↓
               Jenkins
          ↙              ↘
     YES: Deploy    NO: Block
@@ -43,6 +47,7 @@ Developer Push → GitHub
 
 - **Tests Directory Scan** - Scans only `tests/` directory for quick demonstrations
 - **AI-Powered Decisions** - Gemini AI analyzes code and makes deployment decisions
+- **Policy-Based Control** - OPAL manages security policies and access control
 - **Automatic Blocking** - Stops deployment if dangerous code patterns found
 - **LangChain Integration** - Uses AI Agent with Google Gemini Chat Model
 - **Kazakh Language** - AI prompts and responses in Kazakh
@@ -235,6 +240,9 @@ See `tests/README.md` for more demo scenarios.
 | **n8n** | Node.js | 5678 | Workflow automation and AI integration |
 | **Jenkins** | Java | 8080 | CI/CD orchestration |
 | **Gemini AI** | Google | - | AI security analysis via LangChain |
+| **OPAL Server** | Python | 7002 | Policy management and distribution |
+| **OPAL Client** | Python | 7000, 8181 | Policy enforcement (OPA) |
+| **PostgreSQL** | Database | 5432 | OPAL data storage |
 
 ## Project Structure
 
@@ -245,6 +253,10 @@ ai-security-cicd/
 │   └── ai-security-langchain.json    # AI workflow with LangChain
 ├── jenkins/
 │   └── Jenkinsfile            # CI/CD pipeline
+├── opal-policies/
+│   ├── security.rego          # Security policies
+│   ├── rbac.rego              # Access control policies
+│   └── data.json              # Policy data
 ├── tests/
 │   ├── README.md              # Demo scenarios
 │   └── test.py                # Test file for demonstrations
@@ -253,6 +265,7 @@ ai-security-cicd/
 ├── .env.example               # Environment variables template
 ├── package.json               # Dependencies
 ├── LICENSE                    # MIT License
+├── OPAL_INTEGRATION.md        # OPAL documentation
 └── README.md                  # This file
 ```
 
@@ -281,6 +294,20 @@ docker-compose restart ai-security-n8n
 docker logs ai-security-n8n
 ```
 
+### OPAL not working
+
+```bash
+# Check OPAL services
+docker logs ai-security-opal-server
+docker logs ai-security-opal-client
+
+# Test OPAL endpoint
+curl http://localhost:8181/v1/data
+
+# Restart OPAL
+docker-compose restart opal-server opal-client
+```
+
 ### API Rate Limit
 
 Wait 1-2 minutes or use paid Gemini API key for higher limits.
@@ -299,6 +326,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Google Gemini for AI analysis
 - Jenkins for CI/CD orchestration
 - LangChain for AI integration
+- OPAL for policy management
+- Open Policy Agent (OPA) for policy enforcement
 
 ## Support
 
@@ -307,3 +336,80 @@ If you have any questions or issues, please open an issue on GitHub.
 ---
 
 Made with care for secure CI/CD pipelines
+
+
+---
+
+## OPAL Policy Management
+
+OPAL (Open Policy Administration Layer) manages security policies and access control.
+
+### Policy Files
+
+- `opal-policies/security.rego` - Deployment security rules
+- `opal-policies/rbac.rego` - Role-based access control  
+- `opal-policies/data.json` - Policy configuration data
+
+### How OPAL Works
+
+1. **AI Analysis** - Gemini analyzes code and returns risk assessment
+2. **OPAL Check** - Policies evaluate AI decision against rules
+3. **Final Decision** - Allow or block deployment based on policies
+
+### Policy Rules
+
+**Allow Deployment:**
+- LOW risk + confidence ≥ 0.8
+- MEDIUM risk + confidence ≥ 0.9 + no critical issues
+- Manual approval granted
+
+**Block Deployment:**
+- CRITICAL or HIGH risk
+- Dangerous patterns detected
+- Policy violations
+
+### Testing OPAL Policies
+
+```bash
+# Test LOW risk (should allow)
+curl -X POST http://localhost:8181/v1/data/security/deployment_decision \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "input": {
+      "riskLevel": "LOW",
+      "confidence": 0.95,
+      "criticalIssues": [],
+      "dangerousPatterns": 0
+    }
+  }'
+
+# Test HIGH risk (should block)
+curl -X POST http://localhost:8181/v1/data/security/deployment_decision \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "input": {
+      "riskLevel": "HIGH",
+      "confidence": 0.95,
+      "criticalIssues": ["eval() found"],
+      "dangerousPatterns": 1
+    }
+  }'
+```
+
+### Updating Policies
+
+Policies are automatically updated from Git:
+
+```bash
+# Edit policy files
+nano opal-policies/security.rego
+
+# Commit and push
+git add opal-policies/
+git commit -m "Update security policies"
+git push origin main
+
+# OPAL Server automatically pulls and distributes updates
+```
+
+For more details, see [OPAL_INTEGRATION.md](OPAL_INTEGRATION.md)
